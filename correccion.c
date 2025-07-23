@@ -17,110 +17,10 @@ int calcular_r(int m) {
     return r;
 }
 
-// para cualquier codigo(n,m) que cumpla (m+r+1)<=2^r
-// m = numero de bits de datos
-// r= numero de bits de pariedad
-// n= m + r, NO +1 (ese era el error principal)
-uint64_t hamming_ecode_general(uint64_t data, int m){
-
-    // Mostrar el numero en binario 
-    printf("Datos originales en binario: ");
-    for (int i = m - 1; i >= 0; i--) {
-        printf("%c", ((data >> i) & 1) ? '1' : '0');
-    }
-    printf("\n");
-
-    //determinar bits de pariedad
-    int r = calcular_r(m);
-    printf("Bits de pariedad necesarios: %d\n", r);
-
-    //total de bits con pariedad 
-    int n = m + r;
-    printf("Total de bits en código Hamming: %d\n", n);
-
-    //posicionar los bits de datos (No de paridad inicialmente)
-    uint64_t hamming = 0;
-    int data_index = 0; 
-    
-    printf("\n---- Posicionamiento de bits: ----\n");
-    printf("\n (leer de abajo para arriba) \n");
-
-    for (int i = 1; i <= n; i++) {
-        // Si la posicion no es potencia de 2, es para datos
-        if ((i & (i - 1)) != 0) {
-            //extraer bit de datos de derecha a izquierda
-            if ((data >> (m - 1 - data_index)) & 1) {
-                hamming |= (1ULL << (i - 1));
-                printf("Posicion %d: Dato 1 (bit %d de datos)\n", i, data_index);
-            } else {
-                printf("Posicion %d: Dato 0 (bit %d de datos)\n", i, data_index);
-            }
-            data_index++;
-        } else {
-            printf("Posicion %d: Paridad (se calculara)\n", i);
-        }
-    }      
-    
-    //calcular los bits de pariedad
-    printf("\n---- Calculo de paridad: ----\n");
-    for (int p = 0; p < r; p++) {
-        int parity_pos = (1 << p);
-        int count = 0;
-
-        printf("P%d (posicion %d) cubre: ", parity_pos, parity_pos);
-        for (int i = 1; i <= n; i++) {
-            if (i & parity_pos) {
-                printf("%d ", i);
-                if (hamming & (1ULL << (i - 1))) {
-                    count++;
-                }
-            }
-        }
-
-        // pariedad par (si count es impar, ponemos 1)
-        if (count % 2 == 1) { 
-            hamming |= (1ULL << (parity_pos - 1));
-            printf("-> %d unos, se pone P%d=1\n", count, parity_pos);
-        } else {
-            printf("-> %d unos, se pone P%d=0\n", count, parity_pos);
-        }
-    }
-
-    // mostrar resultado final (posicion 1 a n, de izquierda a derecha)
-    printf("\nCodigo Hamming final (%d bits): \n", n);
-    for (int i = 0; i < n; i++) {
-        printf("%d", (int)((hamming >> i) & 1));
-    }
-    printf("\n");
-
-    //mostrar posicion por posicion
-    printf("----Desglose por posiciones:\n----");
-    printf("\n (leer de abajo para arriba) \n");
-    for (int i = 1; i <= n; i++) {
-        int bit_val = (hamming >> (i-1)) & 1;
-        if ((i & (i - 1)) == 0) {
-            printf("Pos %d: P%d = %d\n", i, i, bit_val);
-        } else {
-            printf("Pos %d: Dato = %d\n", i, bit_val);
-        }
-    }
-
-    return hamming;
-}
-
-uint64_t hamming_decode_general(uint64_t hamming, int m) {
-    int r = calcular_r(m);
-    int n = m + r;
+// calcular el sindrome y detecta errores
+int calcular_sindrome(uint64_t hamming, int n, int r) {
     int syndrome = 0;
-
-    printf("\n--- DECODIFICACION ---\n");
-    printf("Codigo recibido (%d bits): ", n);
-    for (int i = 0; i < n; i++) {
-        printf("%d", (int)((hamming >> i) & 1));
-    }
-    printf("\n");
-
-    //calcular sindrome
+    
     printf("\nCalculo de sindrome:\n");
     for (int p = 0; p < r; p++) {
         int parity_pos = (1 << p);
@@ -129,7 +29,7 @@ uint64_t hamming_decode_general(uint64_t hamming, int m) {
         printf("S%d (P%d): ", parity_pos, parity_pos);
         for (int i = 1; i <= n; i++) {
             if (i & parity_pos) {
-                printf("pos%d ", i);
+                printf("%d ", i);
                 if (hamming & (1ULL << (i - 1))) {
                     count++;
                 }
@@ -144,8 +44,71 @@ uint64_t hamming_decode_general(uint64_t hamming, int m) {
             printf(" (par) -> S%d=0\n", parity_pos);
         }
     }
+    
+    return syndrome;
+}
 
+//receptor:
+//recibe como un mensaje (la salida del emisor) que sigue un protocolo 
+//realizar la deteccion/correccion de errores ( "el bit de parierdad es 0, pero vemos un numero impar de 1s, por lo que hubo error" )
+//3.devolver la informacion en cada caso: 
+//a. No se detectaron errores: mostrar la trama recibida 
+//b. Se detectaron errores: indicar que la trama se descarta por detectar errores.
+//c. Se detectaron y corrigieron errores: indicar que se corrigieron errores, indicar
+//posicion de los bits que se corrigieron y mostrar la trama corregida
+uint64_t receptor(uint64_t hamming, int syndrome) {
+    // Advertencia para multiples errores
+    //en donde se encontro que solo puede encontrar errores de un bit y corregirlos es: 
+    // https://es.wikipedia.org/wiki/C%C3%B3digo_Hamming
+    //https://espanol.libretexts.org/Ingenieria/Ingenieria_Electrica_(Johnson)/06%3A_Comunicaci%C3%B3n_de_la_informaci%C3%B3n/6.29%3A_C%C3%B3digos_de_correcci%C3%B3n_de_errores_-_C%C3%B3digos_Hamming#:~:text=Si%20ocurre%20m%C3%A1s%20de%20un%20error%20%28aunque%20sea,cambian%20m%C3%A1s%20bits%20de%20lo%20que%20se%20transmiti%C3%B3
+    printf("\n/// ADVERTENCIA ///\n");
+    printf("\nEl codigo Hamming solo puede:\n");
+    printf("1. Corregir 1 error de forma confiable\n");
+    printf("2. Detectar, pero no corregir, 2 errores\n");
+    printf("3. Con 3+ errores: comportamiento impredecible y usualmente lo suele empeorar\n");
+    
+    char respuesta;
+    printf("\nIntentar correccion? (s/n): ");
+    scanf(" %c", &respuesta);
+    
+    if (respuesta == 's' || respuesta == 'S') {
+        // Corregir error
+        hamming ^= (1ULL << (syndrome - 1));
+        printf("Correccion aplicada en posicion %d\n", syndrome);
+        return hamming;
+    } else {
+        printf("Mensaje rechazado por errores detectados\n");
+        return 0; 
+    }
+}
+
+// para cualquier codigo(n,m) que cumpla (m+r+1)<=2^r
+// m = numero de bits de datos
+// r= numero de bits de pariedad
+uint64_t hamming_decode_general(uint64_t hamming, int n) {
+    // Calcular m (bits de datos) y r (bits de paridad) basado en n (total)
+    int r = 0;
+    int m = 0;
+    
+    //r contando potencias de 2 hasta n
+    for (int i = 1; i <= n; i <<= 1) {
+        if (i <= n) r++;
+    }
+    m = n - r;
+
+    printf("\n--- DECODIFICACION ---\n");
+    printf("Codigo recibido (%d bits): ", n);
+    for (int i = 0; i < n; i++) {
+        printf("%d", (int)((hamming >> i) & 1));
+    }
+    printf("\n");
+    printf("Bits de datos: %d, Bits de paridad: %d\n", m, r);
+
+    //calcular sindrome
+    printf("\nCalculo de sindrome:\n");
+    int syndrome = calcular_sindrome(hamming, n, r);
     printf("Sindrome: %d\n", syndrome);
+
 
     if (syndrome == 0) {
         printf("No hay errores detectados\n");
@@ -153,27 +116,10 @@ uint64_t hamming_decode_general(uint64_t hamming, int m) {
         printf("Error detectado - Sindrome: %d\n", syndrome);
         printf("Posicion indicada por sindrome: %d\n", syndrome);
         
-        // Advertencia para multiples errores
-        //en donde se encontro que solo puede encontrar errores de un bit y corregirlos es: 
-        // https://es.wikipedia.org/wiki/C%C3%B3digo_Hamming
-        //https://espanol.libretexts.org/Ingenieria/Ingenieria_Electrica_(Johnson)/06%3A_Comunicaci%C3%B3n_de_la_informaci%C3%B3n/6.29%3A_C%C3%B3digos_de_correcci%C3%B3n_de_errores_-_C%C3%B3digos_Hamming#:~:text=Si%20ocurre%20m%C3%A1s%20de%20un%20error%20%28aunque%20sea,cambian%20m%C3%A1s%20bits%20de%20lo%20que%20se%20transmiti%C3%B3
-        printf("\n/// ADVERTENCIA ///\n");
-        printf("\nEl codigo Hamming solo puede:\n");
-        printf("1. Corregir 1 error de forma confiable\n");
-        printf("2. Detectar (pero NO corregir) 2 errores\n");
-        printf("3. Con 3+ errores: comportamiento impredecible y usualmente lo suele empeorar\n");
-        
-        char respuesta;
-        printf("\nIntentar correccion? (s/n): ");
-        scanf(" %c", &respuesta);
-        
-        if (respuesta == 's' || respuesta == 'S') {
-            // Corregir error
-            hamming ^= (1ULL << (syndrome - 1));
-            printf("Correccion aplicada en posicion %d\n", syndrome);
-        } else {
-            printf("Mensaje rechazado por errores detectados\n");
-            return 0; 
+        printf("\n--- Receptor ---\n");
+        hamming = receptor(hamming, syndrome);
+        if (hamming == 0) {
+            return 0; // Mensaje rechazado
         }
     }
 
@@ -230,72 +176,36 @@ void validacion(char* codigo, int longitud) {
 uint64_t emisor(){
     //1. solicirar la trama en binario
     char cadena[65];
-    
-    printf("Ingrese la trama en binario: ");
+
+    printf("Ingrese el codigo Hamming : ");
     scanf("%64s", cadena);
 
-    int m = strlen(cadena);
-    printf("Longitud de la información: %d bits\n", m);
+    int n = strlen(cadena);
+    printf("Longitud de la información: %d bits\n", n);
 
-    validacion(cadena, m);
+    validacion(cadena, n);
 
     uint64_t data = string_to_uint64(cadena);
     printf("En decimal: %llu\n", (unsigned long long)data);
 
+    // Mostrar el código bit por bit
+    printf("Codigo recibido en binario: ");
+    for (int i = n - 1; i >= 0; i--) {
+        printf("%c", ((data >> i) & 1) ? '1' : '0');
+    }
+    printf("\n");
     //2. ejecutar el algoritmo y obtener la infomacion  
     //que requiere para comprobar la integridad del mensaje
-    uint64_t encoded = hamming_ecode_general(data, m);
-    //3. devolver el mensaje en binario concatenado con la informacion
-    //adicional requerida para la correccion de errores
-    return encoded;
+    return hamming_decode_general(data, n);
 }
 
-//receptor:
-//recibe como un mensaje (la salida del emisor) que sigue un protocolo 
-//realizar la deteccion/correccion de errores ( "el bit de parierdad es 0, pero vemos un numero impar de 1s, por lo que hubo error" )
-//3.devolver la informacion en cada caso: 
-//a. No se detectaron errores: mostrar la trama recibida 
-//b. Se detectaron errores: indicar que la trama se descarta por detectar errores.
-//c. Se detectaron y corrigieron errores: indicar que se corrigieron errores, indicar
-//posicion de los bits que se corrigieron y mostrar la trama corregida
-uint64_t receptor(uint64_t recibido){ //, int m
-
-    char input[10];
-    printf("Simular error? (s/n): ");
-    scanf("%s", input);
-    
-    if (input[0] == 's' || input[0] == 'S') {
-        printf("Cuantos errores introducir? (1-3): ");
-        int num_errores;
-        scanf("%d", &num_errores);
-        
-        for(int i = 0; i < num_errores; i++) {
-            printf("Ingrese posicion del error %d (1-based): ", i+1);
-            int pos_error;
-            scanf("%d", &pos_error);
-            //introducir error
-            recibido ^= (1ULL << (pos_error - 1)); 
-            printf("error %d introducido en posicion %d\n", i+1, pos_error);
-        }
-    }
-    
-    char input_m[10];
-    printf("Ingrese cantidad de bits de datos originales: ");
-    scanf("%s", input_m);
-    int m_receptor = atoi(input_m);
-
-    return hamming_decode_general(recibido, m_receptor);
-}
 
 
 int main(){
     printf("\n=== CORRECION DE ERRORES ===\n");
+    printf("Nota: Ingrese un codigo Hamming que ya contenga un posible error, con su pariedad\n");
     printf("\n--- Emisor ---\n");
-    uint64_t enviado = emisor();
-
-    printf("\n--- Receptor  ---\n");
-
-    receptor(enviado);
+    emisor();
 
     return 0;
 }
