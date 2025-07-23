@@ -105,7 +105,6 @@ uint64_t hamming_decode_general(uint64_t hamming, int n) {
     printf("Bits de datos: %d, Bits de paridad: %d\n", m, r);
 
     //calcular sindrome
-    printf("\nCalculo de sindrome:\n");
     int syndrome = calcular_sindrome(hamming, n, r);
     printf("Sindrome: %d\n", syndrome);
 
@@ -137,7 +136,7 @@ uint64_t hamming_decode_general(uint64_t hamming, int n) {
     }
 
     printf("Trama corregida: ");
-    for (int i = m - 1; i >= 0; i--) {
+    for (int i = 0; i < m; i++) {
         printf("%d", (int)((datos >> i) & 1));
     }
     printf("\n");
